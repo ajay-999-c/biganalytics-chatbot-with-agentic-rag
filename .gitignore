@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+bign_env/
+faiss_index_store/
+.env
+bignalytics_rag_agent.egg-info/
+.langchain.db
+
+.vscode/
+.idea/
+.DS_Store
