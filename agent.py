@@ -1,4 +1,5 @@
 import os
+from dotenv import load_dotenv
 from typing import List, TypedDict
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_community.llms import Ollama
@@ -6,6 +7,7 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langgraph.graph import StateGraph, END
 from langchain_core.prompts import MessagesPlaceholder
+from langchain_community.llms.cloudflare_workersai import CloudflareWorkersAI
 
 # imports for Tool Calling
 from langchain_core.tools import tool
@@ -18,18 +20,37 @@ import config
 # Import for vector store management
 from vector_store_manager import create_and_save_vector_store, load_vector_store
 
+# Load environment variables from .env file
+load_dotenv() 
 
 # --- GLOBAL CACHE SETUP ---
 print("Setting up SQLite cache for LLM calls using set_llm_cache...")
 set_llm_cache(SQLiteCache(database_path=".langchain.db"))
 
-# --- 1. MODULAR COMPONENT LOADERS (No changes) ---
 
-def get_llm():
-    if config.USE_OPENSOURCE_LLM:
-        return Ollama(model="llama3")
-    else:
-        return ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+###############################################################
+# --- 1. MODULAR COMPONENT LOADERS ---
+
+
+def get_text_generation_llm():
+    """
+    Returns a fast Cloudflare model for general text generation.
+    """
+    print("--- Loading Cloudflare Mistral-7B for Text Generation ---")
+    return CloudflareWorkersAI(
+        account_id=os.getenv("CLOUDFLARE_ACCOUNT_ID"),
+        api_token=os.getenv("CLOUDFLARE_API_TOKEN"),
+        model="@cf/mistral/mistral-7b-instruct-v0.1"
+    )
+def get_tool_calling_llm():
+    """
+    Returns the Gemini model specifically for tool calling, 
+    """
+    print("--- Loading Google Gemini for Tool Calling ---")
+    return ChatGoogleGenerativeAI(model="gemini-1.5-flash-latest", temperature=0)
+
+
+########################################################################
 
 def get_embedding_model():
     print("--- Initializing HuggingFace Embedding Model ---")
@@ -61,7 +82,7 @@ pre_router_chain = (
     ChatPromptTemplate.from_messages([
         ("system", "Classify the user's input as 'greeting' for simple hellos/thanks, or 'information_seeking' for actual questions. Respond with only one word."),
         ("human", "{question}")
-    ]) | get_llm() | StrOutputParser()
+    ]) | get_text_generation_llm() | StrOutputParser()
 )
 
 # --- 2. LANGGRAPH STATE DEFINITION ---
@@ -76,7 +97,10 @@ class GraphState(TypedDict):
 # --- 3. OPTIMIZED ARCHITECTURE (TOOL CALLING) ---
 
 # Components initialization
-llm = get_llm()
+
+tool_calling_llm = get_tool_calling_llm()
+text_gen_llm = get_text_generation_llm()
+retriever = get_retriever()
 retriever = get_retriever()
 
 # STEP 1: Create a tool that will search the knowledge base
@@ -103,13 +127,13 @@ rewriter_chain = (ChatPromptTemplate.from_messages([
 - If the question is already a single, simple question (e.g., 'what is bignalytics?' or 'tell me about the fees'), DO NOT break it down. Simply return it as a list containing that single question.
 - Output ONLY a JSON object with a single key 'questions' containing the list of strings."""),
     ("human", "Conversation History:\n{history}\n\nUser Question: {question}")
-]) | llm | JsonOutputParser())
+]) | text_gen_llm | JsonOutputParser())
 
 
 synthesis_chain = (ChatPromptTemplate.from_messages([
     ("system", "You are an expert response synthesizer. Combine the following question-answer pairs into a single, cohesive, and natural-sounding paragraph. Address the user directly."),
     ("human", "Here is the information to synthesize:\n{answers}")
-]) | llm | StrOutputParser())
+]) | text_gen_llm | StrOutputParser())
 
 
 # STEP 3: Create a new agent that uses Tool Calling
@@ -134,7 +158,7 @@ Here are your instructions:
     MessagesPlaceholder(variable_name="agent_scratchpad"),
 ])
 
-tool_agent = create_tool_calling_agent(llm, tools, agent_prompt)
+tool_agent = create_tool_calling_agent(tool_calling_llm, tools, agent_prompt)
 # IMPORTANT: Set verbose=True for detailed agent execution logs
 agent_executor = AgentExecutor(agent=tool_agent, tools=tools, verbose=True) 
 

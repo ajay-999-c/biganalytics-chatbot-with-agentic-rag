@@ -1,8 +1,9 @@
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
-import os
-from dotenv import load_dotenv
+
 from langchain.memory import ConversationSummaryBufferMemory
 import uuid
 from typing import Optional
@@ -11,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent import get_rag_agent, pre_router_chain
-from agent import get_rag_agent, get_llm
+from agent import get_rag_agent, get_text_generation_llm
 
 
 # Load environment variables from .env file
@@ -84,7 +85,7 @@ Contact Number: 093992-00960"""
     if request.conversation_id not in conversation_memories:
         print(f"--- Creating new ConversationSummaryBufferMemory for ID: {request.conversation_id} ---")
         conversation_memories[request.conversation_id] = ConversationSummaryBufferMemory(
-            llm=get_llm(), max_token_limit=1000, return_messages=True
+            llm=get_text_generation_llm(), max_token_limit=1000, return_messages=True
         )           
 
 

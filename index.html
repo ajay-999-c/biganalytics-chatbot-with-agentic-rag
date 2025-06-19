@@ -159,7 +159,7 @@
             const loadingMsg = addLoadingMessage();
 
             try {
-                const response = await fetch('/chat', {
+                const response = await fetch('http://localhost:8002/chat', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

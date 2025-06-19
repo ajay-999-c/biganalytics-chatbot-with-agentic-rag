@@ -9,3 +9,4 @@ VECTOR_DB_PATH = "faiss_index"
 
 # Knowledge Base File
 KNOWLEDGE_BASE_FILE = "knowledge_base.txt"
+
